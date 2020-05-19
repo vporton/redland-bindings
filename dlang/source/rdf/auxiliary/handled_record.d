@@ -20,37 +20,41 @@ class NullRDFException: RDFException {
 
 // struct Dummy;
 
-mixin template WithoutFinalize(alias Dummy,
+mixin template WithoutFinalize(alias _Dummy,
                                alias _WithoutFinalize,
                                alias _WithFinalize,
-                               alias copier = null)
+                               alias _copier = null)
 {
     import std.traits;
 
-    private Dummy* ptr;
+    alias Dummy = _Dummy;
+    alias WithFinalize = _WithFinalize;
+    alias copier = _copier;
+
+    private _Dummy* ptr;
     // Use fromHandle() instead
-    private this(Dummy* ptr) nothrow @safe {
+    private this(_Dummy* ptr) nothrow @safe {
         this.ptr = ptr;
     }
-    private this(const(Dummy*) ptr) const nothrow @safe {
+    private this(const(_Dummy*) ptr) const nothrow @safe {
         this.ptr = ptr;
     }
-    @property Dummy* handle() const nothrow @trusted {
-        return cast(Dummy*)ptr;
+    @property _Dummy* handle() const nothrow @trusted {
+        return cast(_Dummy*)ptr;
     }
-    static _WithoutFinalize fromHandle(const Dummy* ptr) {
-        return _WithoutFinalize(cast(Dummy*)ptr);
+    static _WithoutFinalize fromHandle(const _Dummy* ptr) {
+        return _WithoutFinalize(cast(_Dummy*)ptr);
     }
-    static _WithoutFinalize fromNonnullHandle(const Dummy* ptr) {
+    static _WithoutFinalize fromNonnullHandle(const _Dummy* ptr) {
         if(!ptr) throw new NullRDFException();
-        return _WithoutFinalize(cast(Dummy*)ptr);
+        return _WithoutFinalize(cast(_Dummy*)ptr);
     }
     @property bool isNull() {
         return ptr == null;
     }
-    static if(isCallable!copier) {
+    static if(isCallable!_copier) {
         _WithFinalize dup() {
-            return _WithFinalize(copier(ptr));
+            return _WithFinalize( _copier(ptr));
         }
     }
     size_t toHash() const nothrow @safe {
@@ -58,31 +62,36 @@ mixin template WithoutFinalize(alias Dummy,
     }
 }
 
-mixin template WithFinalize(alias Dummy,
+mixin template WithFinalize(alias _Dummy,
                             alias _WithoutFinalize,
                             alias _WithFinalize,
-                            alias destructor,
-                            alias constructor = null)
+                            alias _destructor,
+                            alias _constructor = null)
 {
     import std.traits;
 
-    private Dummy* ptr;
+    alias Dummy = _Dummy;
+    alias WithoutFinalize = _WithoutFinalize;
+    alias destructor = _destructor;
+    alias constructor = _constructor;
+
+    private _Dummy* ptr;
     @disable this();
-    static if (isCallable!constructor) {
+    static if (isCallable!_constructor) {
         static _WithFinalize create() {
-            return _WithFinalize(constructor());
+            return _WithFinalize( _constructor());
         }
     }
     @disable this(this);
     // Use fromHandle() instead
-    private this(Dummy* ptr) nothrow @safe {
+    private this(_Dummy* ptr) nothrow @safe {
         this.ptr = ptr;
     }
-    private this(const Dummy* ptr) const nothrow @safe {
+    private this(const _Dummy* ptr) const nothrow @safe {
         this.ptr = ptr;
     }
     ~this() {
-        destructor(ptr);
+        _destructor(ptr);
     }
     /*private*/ @property _WithoutFinalize base() nothrow @trusted { // private does not work in v2.081.2
         return _WithoutFinalize(ptr);
@@ -91,15 +100,15 @@ mixin template WithFinalize(alias Dummy,
         return const _WithoutFinalize(ptr);
     }
     alias base this;
-    @property Dummy* handle() const {
-        return cast(Dummy*)ptr;
+    @property _Dummy* handle() const {
+        return cast(_Dummy*)ptr;
     }
-    static _WithFinalize fromHandle(const Dummy* ptr) {
-        return _WithFinalize(cast(Dummy*)ptr);
+    static _WithFinalize fromHandle(const _Dummy* ptr) {
+        return _WithFinalize(cast(_Dummy*)ptr);
     }
-    static _WithFinalize fromNonnullHandle(const Dummy* ptr) {
+    static _WithFinalize fromNonnullHandle(const _Dummy* ptr) {
         if(!ptr) throw new NullRDFException();
-        return _WithFinalize(cast(Dummy*)ptr);
+        return _WithFinalize(cast(_Dummy*)ptr);
     }
     static if (__traits(compiles, _WithoutFinalize.opEquals)) {
         bool opEquals(const ref _WithFinalize s) const {
@@ -119,6 +128,25 @@ mixin template WithFinalize(alias Dummy,
     }
     size_t toHash() const nothrow @safe {
         return base.toHash;
+    }
+
+    class HandleObject {
+        alias WithFinalize = _WithFinalize;
+        alias WithoutFinalize = _WithoutFinalize;
+        private _WithoutFinalize obj;
+        bool shouldFinalize;
+        this(Dummy *ptr, bool _shouldFinalize) {
+            obj = _WithoutFinalize(ptr);
+            shouldFinalize = _shouldFinalize;
+        }
+        this(_WithoutFinalize from) {
+            obj = from;
+            shouldFinalize = false;
+        }
+        ~this() {
+            if(shouldFinalize) _WithFinalize.destructor(obj.handle);
+        }
+        alias obj this;
     }
 }
 
